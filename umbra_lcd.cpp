@@ -11,8 +11,14 @@
  */
 #include <duds/hardware/interface/linux/SysFsPort.hpp>
 #include <duds/hardware/interface/ChipPinSelectManager.hpp>
+#include <duds/hardware/interface/DigitalPin.hpp>
 #include <duds/general/IntegerBiDirIterator.hpp>
 #include <duds/time/planetary/Planetary.hpp>
+//#include <duds/hardware/devices/instruments/TSL2591.hpp>
+//#include <duds/hardware/interface/linux/SysPwm.hpp>
+//#include <duds/hardware/interface/linux/DevI2c.hpp>
+#include <duds/hardware/devices/instruments/INA219.hpp>
+#include <duds/hardware/interface/linux/DevSmbus.hpp>
 #include "DisplayStuff.hpp"
 #include "RunDisplay.hpp"
 #include "Umbra.hpp"
@@ -96,9 +102,18 @@ try {
 	// ----- signal handler -----
 	std::signal(SIGINT, &signalHandler);
 	std::signal(SIGTERM, &signalHandler);
+	// ----- battery monitor -----
+	std::unique_ptr<duds::hardware::interface::Smbus> smbus(
+		new duds::hardware::interface::linux::DevSmbus(
+			"/dev/i2c-1",
+			0x40,
+			duds::hardware::interface::Smbus::NoPEC()
+		)
+	);
+	duds::hardware::devices::instruments::INA219 batmon(smbus, 0.1);
 	// ----- display -----
-	//                       LCD pins:  4  5   6   7  RS   E
-	std::vector<unsigned int> gpios = { 5, 6, 19, 26, 20, 21 };
+	//                       LCD pins:  4  5   6   7  RS   E  buzzer
+	std::vector<unsigned int> gpios = { 5, 6, 19, 26, 20, 21, 0 };
 	std::shared_ptr<duds::hardware::interface::linux::SysFsPort> port =
 		std::make_shared<duds::hardware::interface::linux::SysFsPort>(
 			gpios, 0
@@ -118,21 +133,20 @@ try {
 	// LCD driver
 	std::shared_ptr<displays::HD44780> tmd =
 		std::make_shared<displays::HD44780>(
-			lcdset, lcdsel, 16, 2
+			lcdset, lcdsel, 16, 4
 		);
 	tmd->initialize();
 
 	// start LCD output thread
-	std::thread displayThread(&runDisplay, tmd, testTimeOffset);
+	std::thread displayThread(&runDisplay, tmd, std::ref(batmon), testTimeOffset);
 
+	duds::hardware::interface::DigitalPin buzzer(port, 6);
 	// ----- GPS -----
 	// attempt to connect to GPSD
 	std::unique_ptr<gpsmm> gps(new gpsmm("localhost", DEFAULT_GPSD_PORT));
 	// failed?
 	if (!gps->stream(WATCH_ENABLE|WATCH_JSON)) {
-		// fatal error on the first attempt
-		std::cerr << "Failed to contact gpsd." << std::endl;
-		return 1;
+		gps.reset();
 	}
 	// distant initial location helps ensure an early totality check
 	Location prev(0.0, 0.0), curr;
@@ -140,16 +154,19 @@ try {
 	// minimum time check
 	auto lastCheck = std::chrono::system_clock::now() - std::chrono::minutes(2);
 	std::future<void> eclipseCalc;
-
+	gps_data_t *gpsInfo;
+	
 	// until signal requests termination
 	while (!quit) {
-		// up to 5 second delay
-		if (!gps->waiting(5000000)) {
-			continue;
+		if (gps) {
+			// up to 5 second delay
+			if (!gps->waiting(5000000)) {
+				continue;
+			}
+			gpsInfo = gps->read();
 		}
-		gps_data_t *gpsInfo = gps->read();
 		// failed?
-		if (!gpsInfo) {
+		if (!gps || !gpsInfo) {
 			// attempt to re-establish contact with gpsd
 			gps.reset();
 			do {
@@ -163,11 +180,11 @@ try {
 				}
 			} while (!gps);
 			displaystuff.clearError();
-		} else if (gpsInfo->set & LATLON_SET) {
+		} else if (gps && (gpsInfo->set & LATLON_SET)) {
 			if (gpsInfo->fix.mode != MODE_3D) {
 				displaystuff.badFix();
 			} else {
-				curr.lon = gpsInfo->fix.longitude;
+				curr.lon = gpsInfo->fix.longitude - testLatOffset / 2;
 				curr.lat = gpsInfo->fix.latitude + testLatOffset;
 				displaystuff.setCurrLoc(
 					curr ,
@@ -204,7 +221,7 @@ try {
 					}
 				}
 			}
-		} else if (~gpsInfo->status & STATUS_FIX) {
+		} else if (!gps || ~gpsInfo->status & STATUS_FIX) {
 			displaystuff.badFix();
 		}
 	}

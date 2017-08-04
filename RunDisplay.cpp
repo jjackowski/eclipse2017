@@ -11,9 +11,12 @@
  */
 #include <duds/hardware/devices/displays/TextDisplayStream.hpp>
 #include <duds/hardware/devices/clocks/LinuxClockDriver.hpp>
+#include <duds/hardware/devices/instruments/INA219.hpp>
 #include <duds/time/planetary/Planetary.hpp>
 #include "DisplayStuff.hpp"
+#include "Input.hpp"
 #include <iostream>
+#include <fstream>
 #include <chrono>
 #include <csignal>
 #include <boost/exception/diagnostic_information.hpp>
@@ -23,6 +26,9 @@ extern DisplayStuff displaystuff;
 extern std::sig_atomic_t quit;
 
 namespace displays = duds::hardware::devices::displays;
+
+std::int32_t inputRotor = 0;
+std::int32_t inputButton = 0;
 
 /**
  * Writes the time of day of an eclipse totality event. This avoids the need
@@ -38,6 +44,29 @@ void writeEclipseTime(std::ostream &os, int time) {
 	std::setw(2) << m << ':' << std::setw(2) << s << std::setfill(' ');
 }
 
+void rotaryInput(EventTypeCode, std::int32_t val) {
+	//std::cout << "rotaryInput(), val = " << val << std::endl;
+	inputRotor += val;
+}
+
+void buttonInput(EventTypeCode, std::int32_t val) {
+	//std::cout << "buttonInput(), val = " << val << std::endl;
+	inputButton |= val;
+}
+
+void configureInput(const EvdevShared &ev) {
+	EventTypeCode etc(EV_REL, REL_X);
+	if (ev->hasEvent(etc)) {
+		ev->inputConnect(etc, &rotaryInput);
+	} else {
+		etc.type = EV_KEY;
+		etc.code = KEY_F24;
+		if (ev->hasEvent(etc)) {
+			ev->inputConnect(etc, &buttonInput);
+		}
+	}
+}
+
 // maybe should make a framework for this; it'll probably get messy if user
 // input is added
 enum DisplayPage {
@@ -48,15 +77,28 @@ enum DisplayPage {
 	Totality_Start,    // skip these after totality
 	Totality_End,
 	Totality_Wait,     // maybe record location during totality to a file
+	System,
 	Error,
 	PageCycle,         // if here, cycle to first page
 	Totality_Remain,  // special-ness
 };
+
+// Add a system page. Use /proc/uptime: 1st is time running (seconds), second
+// is time idle.
+
 constexpr int pagetime = 8;
 void runDisplay(
 	const std::shared_ptr<displays::TextDisplay> &tmd,
+	duds::hardware::devices::instruments::INA219 &batmon,
 	int testTimeOffset
 ) try {
+	Poller poller;
+	EvdevShared in0 = std::make_shared<Evdev>("/dev/input/event0");
+	EvdevShared in1 = std::make_shared<Evdev>("/dev/input/event1");
+	configureInput(in0);
+	configureInput(in1);
+	in0->usePoller(poller);
+	in1->usePoller(poller);
 	displays::TextDisplayStream tds(tmd);
 	// the clock for the current time
 	duds::hardware::devices::clocks::LinuxClockDriver lcd;
@@ -71,10 +113,26 @@ void runDisplay(
 	bool syncdClock = false;
 
 	while (!quit) {
+		if (inputButton) {
+			quit = 1;
+			system("/sbin/shutdown -h now");
+			return;
+		}
 		// get stuff to display
 		DisplayInfo info(displaystuff.getInfo());
+		// display change on input
+		if (inputRotor) {
+			timer = pagetime * 2;
+			page += inputRotor;
+			if (page < 0) {
+				page += PageCycle - 1;
+			} else if (page >= PageCycle) {
+				page -= PageCycle;
+			}
+			pagechange = true;
+		}
 		// advance display
-		if (!--timer) {
+		if (!inputRotor && !--timer) {
 			bool totality = false;
 			// totality logic; use only before and during totality
 			if (time.total_seconds() <= (info.end + 4)) {
@@ -106,7 +164,7 @@ void runDisplay(
 				&& (page <= Totality_Wait - 1))
 			) {
 				// advance to the error page
-				page = Error - 1;
+				page = System - 1;
 			}
 			// do not advance page or change timer if using in-totality logic
 			if (!totality) {
@@ -124,7 +182,7 @@ void runDisplay(
 					(page >= Totality_Start) && (page <= Totality_Wait))
 				) {
 					// advance to the error page
-					page = Error;
+					page = System;
 				}
 				// advanced to the end, or to the error page without an error
 				if (
@@ -162,6 +220,9 @@ void runDisplay(
 		) {
 			timer = 1;
 		}
+		
+		assert(tmd->rowPos() == 0);
+		assert(tmd->columnPos() == 0);
 
 		// first line; limit to 7 characters on left; clock is on right
 		switch (page) {
@@ -190,6 +251,11 @@ void runDisplay(
 					} else {
 						tds << "++m";
 					}
+				}
+				break;
+			case System:
+				if (pagechange) {
+					tds << "Sys";
 				}
 				break;
 			case Error:
@@ -244,10 +310,15 @@ void runDisplay(
 			std::cout.flush();
 			*/
 		} else {
+			if (pagechange) {
+				tmd->clearTo(7, 0);
+			}
 			// position for second line
 			tds << displays::move(0, 1);
 		}
 
+		assert(tmd->rowPos() == 1);
+		assert(tmd->columnPos() == 0);
 		// second line; already positioned
 
 		switch (page) {
@@ -293,7 +364,7 @@ void runDisplay(
 				break;
 			case Totality_End:
 				if (pagechange) {
-					tds << "End  " << displays::move(8, 1);
+					tds << "End  " << displays::clearTo(7, 1);
 					writeEclipseTime(tds, info.end);
 				}
 				break;
@@ -309,6 +380,21 @@ void runDisplay(
 					m = (diff / 60) - (h * 60);
 					s = diff % 60;
 					tds << std::setw(2) << std::right << h << "h " <<
+					std::setfill('0') << std::setw(2) << m << "m " << std::setw(2)
+					<< s << std::left << std::setfill(' ') << 's';
+				}
+				break;
+			case System:
+				//if (pagechange)
+				{
+					std::ifstream upt("/proc/uptime");
+					int uptime;
+					upt >> uptime;
+					int h, m, s;
+					h = uptime / 3600;
+					m = (uptime / 60) - (h * 60);
+					s = uptime % 60;
+					tds << "Up " << std::setw(2) << std::right << h << "h " <<
 					std::setfill('0') << std::setw(2) << m << "m " << std::setw(2)
 					<< s << std::left << std::setfill(' ') << 's';
 				}
@@ -332,16 +418,44 @@ void runDisplay(
 			assert(tmd->rowPos() == 1);
 			// clear the rest of the line
 			tmd->clearTo(tmd->columns() - 1, 1);
-			assert(tmd->rowPos() == 0);
-		} else {
+			//assert(tmd->rowPos() == 0);
+		} // else {
 			// assure cursor in the right spot
-			tmd->move(0, 0);
-		}
+			//tmd->move(0, 0);
+			//tmd->move(0, 2);
+		//}
+		tmd->move(0, 2);
+		
+		// test lines
+		batmon.sample();
+		tds << "V " << std::setprecision(3) << std::setw(5) <<
+		batmon.busVoltage().value << " A " << std::setprecision(3) <<
+		std::setw(5) << batmon.busCurrent().value << //displays::clearTo(14, 2) << "\nW "
+		// current can go to end of line
+		" " << displays::move(0, 3) << "W " << std::setprecision(3) << std::setw(5) << batmon.busPower().value
+		// add brightness here?
+		<< "     ";
+		assert(tmd->rowPos() == 3);
+		assert(tmd->columnPos() > 3);
+		//<< displays::clearTo(14, 3);  // <-- is that right?
+		//std::cout << "Column " << tmd->columnPos() << "  Row " << tmd->rowPos()
+		//<< std::endl;
+		tmd->move(0, 0);
+		
 		pagechange = false;
+		inputRotor = 0;
+		inputButton = 0;
 		// compute time to begining of next second according to the time sample
 		std::chrono::milliseconds delay(
 			1000 - (time.total_milliseconds() % 1000)
 		);
+		if (delay.count() > 0) {
+			poller.wait(delay);
+		} else {
+			std::this_thread::sleep_for(std::chrono::milliseconds(16));
+			poller.check();
+		}
+		/*
 		// if short, increase delay by a second
 		if (delay < std::chrono::milliseconds(16)) {
 			delay += std::chrono::milliseconds(1000);
@@ -349,6 +463,7 @@ void runDisplay(
 		// delay for the computed time based on the steady clock, not the clock
 		// used for the time sample
 		std::this_thread::sleep_until(std::chrono::steady_clock::now() + delay);
+		*/
 	}
 } catch (...) {
 	std::cerr << "Program failed in display thread:\n" <<

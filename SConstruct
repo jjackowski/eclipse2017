@@ -35,6 +35,9 @@ buildopts.Add('BOOSTTAG',
 buildopts.Add('BOOSTVER',
 	'The version tag for Boost libraries; may be needed on Windows. Include a leading dash.',
 	'')
+buildopts.Add(PathVariable('EVDEVINC',
+	'The libevdev include path.',
+	'/usr/include/libevdev-1.0/libevdev', PathVariable.PathAccept))
 # two dots for a relative path result in THREE dots given to gcc  !#@!#@!$!!!
 buildopts.Add(PathVariable('DUDSINC',
 	'The root of the directories containing the DUDS library header files; use ONE dot for relative path.',
@@ -117,6 +120,7 @@ optionalLibs = {
 	#	'libboost_unit_test_framework${BOOSTTOOLSET}${BOOSTTAG}${BOOSTABI}${BOOSTVER}',
 	'LIBGPS' : 'gps',
 	'LIBDUDS' : 'duds',
+	'LIBEVDEV' : 'evdev',
 }
 
 #####
@@ -150,6 +154,9 @@ else:
 	for mac in remlibs:
 		del optionalLibs[mac]
 	dbgenv = conf.Finish()
+	if 'LIBEVDEV' in optionalLibs:
+		dbgenv.Append(CPPPATH = '$EVDEVINC')
+		env.Append(CPPPATH = '$EVDEVINC')
 
 # add back the libraries
 dbgenv['LIBS'] = env['LIBS']

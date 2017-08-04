@@ -10,11 +10,13 @@
  * Copyright (C) 2017  Jeff Jackowski
  */
 #include <duds/hardware/devices/displays/HD44780.hpp>
+#include <duds/hardware/devices/instruments/INA219.hpp>
 
 /**
  * Handles operating the LCD; intended to run on its own thread.
  */
 void runDisplay(
 	const std::shared_ptr<duds::hardware::devices::displays::TextDisplay> &tmd,
+	duds::hardware::devices::instruments::INA219 &batmon,
 	int testTimeOffset
 );

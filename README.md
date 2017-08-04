@@ -32,7 +32,6 @@ synchronizing the clock with GPS.
 What the umbra_lcd program does not yet do that I'd like it to:
  - Estimate the very beginning and ending of the eclipse
  - Show sun azimuth and elevation for the very beginning, ending, and mid-totality
- - Control the display backlight based on ambient brightness
 
 # Dependencies
 
@@ -44,8 +43,9 @@ The umbra_lcd program additionally needs these libraries:
  - [Boost](http://www.boost.org/)
  - [DUDS](https://github.com/jjackowski/duds)
  - GPSD's C++ library
+ - evdev
 
-If those last two libraries are not found, the umbra_lcd program will not build.
+If those last three libraries are not found, the umbra_lcd program will not build.
 
 The default location for the DUDS library is at the same directory level as wherever this code 
 finds itself.
