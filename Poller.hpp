@@ -1,3 +1,17 @@
+/*
+ * This file is part of the Eclipse2017 project. It is subject to the GPLv3
+ * license terms in the LICENSE file found in the top-level directory of this
+ * distribution and at
+ * https://github.com/jjackowski/eclipse2017/blob/master/LICENSE.
+ * No part of the Eclipse2017 project, including this file, may be copied,
+ * modified, propagated, or distributed except according to the terms
+ * contained in the LICENSE file.
+ *
+ * Copyright (C) 2017  Jeff Jackowski
+ */
+#ifndef POLLER_HPP
+#define POLLER_HPP
+
 #include <sys/epoll.h>
 #include <boost/exception/info.hpp>
 #include <boost/noncopyable.hpp>
@@ -15,6 +29,10 @@ public:
 
 typedef std::shared_ptr<PollResponse>  PollResponseShared;
 
+/**
+ * A simple C++ interface to using Linux's epoll() function.
+ * @author  Jeff Jackowski
+ */
 class Poller : boost::noncopyable {
 	std::map<int, PollResponseShared> things;
 	mutable std::mutex block;
@@ -33,3 +51,5 @@ public:
 		wait(std::chrono::milliseconds(0));
 	}
 };
+
+#endif        //  #ifndef POLLER_HPP

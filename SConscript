@@ -1,7 +1,7 @@
 Import('*')
 
 if 'LIBEVDEV' in env:
-	lib = env.StaticLibrary('eclipse2017', Glob('[FUPI]*.cpp'))
+	lib = env.StaticLibrary('eclipse2017', Glob('[FUP]*.cpp') + ['Input.cpp'])
 else:
 	lib = env.StaticLibrary('eclipse2017', Glob('[FUP]*.cpp'))
 
@@ -39,7 +39,9 @@ else:
 	)
 if 'LIBDUDS' in env and 'LIBGPS' in env and 'LIBEVDEV' in env:
 	targets.append(
-		env_lcd.Program('umbra_lcd', ['umbra_lcd.cpp'] + Glob('[DR]*.cpp') + lib)
+		env_lcd.Program('umbra_lcd',
+			['umbra_lcd.cpp', 'InTotalityPage.cpp'] + Glob('[DEGNRST]*.cpp') + lib
+		)
 	)
 
 Return('targets')

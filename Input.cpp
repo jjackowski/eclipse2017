@@ -1,3 +1,14 @@
+/*
+ * This file is part of the Eclipse2017 project. It is subject to the GPLv3
+ * license terms in the LICENSE file found in the top-level directory of this
+ * distribution and at
+ * https://github.com/jjackowski/eclipse2017/blob/master/LICENSE.
+ * No part of the Eclipse2017 project, including this file, may be copied,
+ * modified, propagated, or distributed except according to the terms
+ * contained in the LICENSE file.
+ *
+ * Copyright (C) 2017  Jeff Jackowski
+ */
 #include "Input.hpp"
 #include <boost/exception/errinfo_file_name.hpp>
 #include <boost/exception/errinfo_errno.hpp>
@@ -97,5 +108,3 @@ int Evdev::value(unsigned int et, unsigned int ec) const {
 void Evdev::usePoller(Poller &p) {
 	p.add(shared_from_this(), fd);
 }
-
-//RotaryEncoder::RotaryEncoder(Evdev &&e) : Evdev(std::move(e))

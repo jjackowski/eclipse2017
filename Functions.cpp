@@ -80,5 +80,27 @@ void sunPosition(
 	azimuth = -(std::acos(
 		-(std::sin(latrad) * coszen - std::sin(decl)) /
 		(std::cos(latrad) * std::sin(zenith))
-	) - M_PI * 2.0) * 180.0 / M_PI;
+	) - M_PI) * 180.0 / M_PI;
+}
+
+void Hms::set(int seconds) {
+	h = seconds / 3600;
+	m = (seconds / 60) - (h * 60);
+	s = seconds % 60;
+}
+
+void Hms::writeDuration(std::ostream &os) {
+	os << std::right;
+	if (h) {
+		os << h << "h " << std::setfill('0') << std::setw(2);
+	}
+	if (h || m) {
+		os << m << "m " << std::setfill('0') << std::setw(2);
+	}
+	os << s << std::left << std::setfill(' ') << 's';
+}
+
+void Hms::writeTime(std::ostream &os) {
+	os << std::right << std::setw(2) << h << ':' << std::setfill('0') <<
+	std::setw(2) << m << ':' << std::setw(2) << s << std::setfill(' ');
 }

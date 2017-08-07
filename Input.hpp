@@ -1,12 +1,17 @@
+/*
+ * This file is part of the Eclipse2017 project. It is subject to the GPLv3
+ * license terms in the LICENSE file found in the top-level directory of this
+ * distribution and at
+ * https://github.com/jjackowski/eclipse2017/blob/master/LICENSE.
+ * No part of the Eclipse2017 project, including this file, may be copied,
+ * modified, propagated, or distributed except according to the terms
+ * contained in the LICENSE file.
+ *
+ * Copyright (C) 2017  Jeff Jackowski
+ */
 #include <libevdev.h>
 #include <boost/signals2/signal.hpp>
 #include "Poller.hpp"
-
-struct EvdevDeleter {
-	void operator()(libevdev *ed) {
-		libevdev_free(ed);
-	}
-};
 
 struct EvdevError : virtual std::exception, virtual boost::exception { };
 struct EvdevFileOpenError : EvdevError { };
@@ -67,9 +72,3 @@ public:
 };
 
 typedef std::shared_ptr<Evdev>  EvdevShared;
-
-class RotaryEncoder {
-	EvdevShared input;
-public:
-	//RotaryEncoder(Evdev &&e);
-};

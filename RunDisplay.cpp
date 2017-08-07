@@ -9,12 +9,15 @@
  *
  * Copyright (C) 2017  Jeff Jackowski
  */
-#include <duds/hardware/devices/displays/TextDisplayStream.hpp>
-#include <duds/hardware/devices/clocks/LinuxClockDriver.hpp>
-#include <duds/hardware/devices/instruments/INA219.hpp>
 #include <duds/time/planetary/Planetary.hpp>
-#include "DisplayStuff.hpp"
+#include "RunDisplay.hpp"
 #include "Input.hpp"
+#include "GpsPage.hpp"
+#include "TotalityWaitPage.hpp"
+#include "InTotalityPage.hpp"
+#include "SystemPage.hpp"
+#include "ErrorPage.hpp"
+#include "NoticePage.hpp"
 #include <iostream>
 #include <fstream>
 #include <chrono>
@@ -27,31 +30,17 @@ extern std::sig_atomic_t quit;
 
 namespace displays = duds::hardware::devices::displays;
 
-std::int32_t inputRotor = 0;
+std::int32_t inputRotor;
 std::int32_t inputButton = 0;
-
-/**
- * Writes the time of day of an eclipse totality event. This avoids the need
- * to convert the time provided by NASA's shapefiles into something else
- * before output.
- */
-void writeEclipseTime(std::ostream &os, int time) {
-	int h, m, s;
-	h = time / 3600;
-	m = (time / 60) - (h * 60);
-	s = time % 60;
-	os << std::right << std::setw(2) << h << ':' << std::setfill('0') <<
-	std::setw(2) << m << ':' << std::setw(2) << s << std::setfill(' ');
-}
 
 void rotaryInput(EventTypeCode, std::int32_t val) {
 	//std::cout << "rotaryInput(), val = " << val << std::endl;
-	inputRotor += val;
+	inputRotor -= val;
 }
 
 void buttonInput(EventTypeCode, std::int32_t val) {
-	//std::cout << "buttonInput(), val = " << val << std::endl;
-	inputButton |= val;
+	std::cout << "buttonInput(), val = " << val << std::endl;
+	inputButton = val;
 }
 
 void configureInput(const EvdevShared &ev) {
@@ -67,209 +56,93 @@ void configureInput(const EvdevShared &ev) {
 	}
 }
 
-// maybe should make a framework for this; it'll probably get messy if user
-// input is added
-enum DisplayPage {
-	GPS_Status,
-	GPS_Longitutde,
-	GPS_Latitude,
-	Totality_Duration,
-	Totality_Start,    // skip these after totality
-	Totality_End,
-	Totality_Wait,     // maybe record location during totality to a file
-	System,
-	Error,
-	PageCycle,         // if here, cycle to first page
-	Totality_Remain,  // special-ness
-};
+RunDisplay::RunDisplay(
+	const std::shared_ptr<displays::HD44780> &hd,
+	duds::hardware::devices::instruments::INA219 &batt,
+	duds::hardware::interface::DigitalPin &buz,
+	int toff
+) : disp(hd), batmon(batt), buzzer(buz), testTimeOffset(toff), tds(disp),
+pagechange(true), syncdClock(false), page(System), timer(pagetime) { }
 
-// Add a system page. Use /proc/uptime: 1st is time running (seconds), second
-// is time idle.
+void RunDisplay::incPage(const DisplayInfo &di, Page::SelectionCause sc) {
+	Page::SelectionResponse sr;
+	do {
+		if (++page >= PageCycle) {
+			page = GPS_Status;
+		}
+		sr = pages[page]->select(di, sc);
+	} while (sr == Page::SkipPage);
+	changePage(page);
+}
 
-constexpr int pagetime = 8;
-void runDisplay(
-	const std::shared_ptr<displays::TextDisplay> &tmd,
-	duds::hardware::devices::instruments::INA219 &batmon,
-	int testTimeOffset
-) try {
-	Poller poller;
+void RunDisplay::decPage(const DisplayInfo &di, Page::SelectionCause sc) {
+	Page::SelectionResponse sr;
+	do {
+		if (--page < GPS_Status) {
+			page = PageCycle - 1;
+		}
+		sr = pages[page]->select(di, sc);
+	} while (sr == Page::SkipPage);
+	changePage(page);
+}
+
+void RunDisplay::changePage(int p) {
+	assert(!pagechange);
+	page = p;
+	timer = pagetime;
+	pagechange = true;
+}
+
+constexpr int RunDisplay::pagetime;
+
+void RunDisplay::run()
+try {
+	// initialize input
 	EvdevShared in0 = std::make_shared<Evdev>("/dev/input/event0");
 	EvdevShared in1 = std::make_shared<Evdev>("/dev/input/event1");
+	// configure input response
 	configureInput(in0);
 	configureInput(in1);
 	in0->usePoller(poller);
 	in1->usePoller(poller);
-	displays::TextDisplayStream tds(tmd);
-	// the clock for the current time
-	duds::hardware::devices::clocks::LinuxClockDriver lcd;
-	// a sample of the current time
-	duds::hardware::devices::clocks::LinuxClockDriver::Measurement::TimeSample ts;
-	boost::posix_time::time_duration time;
-	// when to advance the current display page
-	int timer = pagetime;
-	// information currently displayed
-	int page = 0;//Error;
-	bool pagechange = true;
-	bool syncdClock = false;
+	// try to eat up waiting input events
+	{ // the button event is causing lots of trouble
+		int cnt = 0, prev;
+		do {
+			inputRotor = 0;
+			prev = inputButton;
+			inputButton = 0;
+			// not sure why/if this needs a delay
+			poller.wait(std::chrono::milliseconds(2));
+			if (inputButton != prev) {
+				cnt = 0;
+			} else {
+				++cnt;
+			}
+		} while (inputRotor || inputButton || prev || (cnt < 64));
+	}
+	bool lowBatt = false;
+	bool critBatt = false;
+	
+	// create Page objects
+	pages[GPS_Status] = std::unique_ptr<Page>(new GpsPage);
+	pages[Totality_Times] = std::unique_ptr<Page>(new TotalityPage);
+	pages[Totality_Wait] = std::unique_ptr<Page>(new TotalityWaitPage);
+	pages[System] = std::unique_ptr<Page>(new SystemPage(batmon));
+	pages[Error] = std::unique_ptr<Page>(new ErrorPage);
+	pages[Notice] = std::unique_ptr<Page>(new NoticePage);
+	pages[InTotality] = std::unique_ptr<Page>(new InTotalityPage);
+	
+	// start on second line
+	disp->move(0, 1);
 
+	// big loop for display output and user input
 	while (!quit) {
-		if (inputButton) {
-			quit = 1;
-			system("/sbin/shutdown -h now");
-			return;
-		}
-		// get stuff to display
-		DisplayInfo info(displaystuff.getInfo());
-		// display change on input
-		if (inputRotor) {
-			timer = pagetime * 2;
-			page += inputRotor;
-			if (page < 0) {
-				page += PageCycle - 1;
-			} else if (page >= PageCycle) {
-				page -= PageCycle;
-			}
-			pagechange = true;
-		}
-		// advance display
-		if (!inputRotor && !--timer) {
-			bool totality = false;
-			// totality logic; use only before and during totality
-			if (time.total_seconds() <= (info.end + 4)) {
-				// totality is now  (time is 1s in past)
-				if (time.total_seconds() >= (info.start - 1)) {
-					if (page != Totality_Remain) {
-						page = Totality_Remain;
-						pagechange = true;
-					}
-					// run page change logic next time through the loop
-					//timer = 1;
-					totality = true;
-					// maybe add mid-way attention sound?
-				}
-				// impending start?
-				else if (time.total_seconds() >= (info.start - 32)) {
-					if (page != Totality_Wait) {
-						page = Totality_Wait;
-						pagechange = true;
-					}
-					// run page change logic next time through the loop
-					//timer = 1;
-					totality = true;
-					// do something for attention
-				}
-			}
-			// totality end is in the past (checking previous page)
-			else if ((page == Totality_Remain) || ((page >= Totality_Duration - 1)
-				&& (page <= Totality_Wait - 1))
-			) {
-				// advance to the error page
-				page = System - 1;
-			}
-			// do not advance page or change timer if using in-totality logic
-			if (!totality) {
-				++page;
-				// advance past pages without good info
-				if (
-					// advancing to lon & lat pages, but no position fix
-					(!info.goodfix &&
-					((page == GPS_Longitutde) || (page == GPS_Latitude)))
-				) {
-					page = Totality_Duration;
-				} else if (
-					// advancing to second or third totality page, but not in totality
-					(!info.inTotality &&
-					(page >= Totality_Start) && (page <= Totality_Wait))
-				) {
-					// advance to the error page
-					page = System;
-				}
-				// advanced to the end, or to the error page without an error
-				if (
-					// at end of pages
-					(page == PageCycle) ||
-					// at error page, but no error
-					((page == Error) && info.errormsg.empty())
-				) {
-					// back to the start
-					page = GPS_Status;
-				}
-				// show the page for 8 seconds
-				//showuntil = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-				timer = pagetime;
-				pagechange = true;
-			}
-		}
-		// output status: have new result?
-		if (info.totchg) {
-			// show new result immediately
-			page = Totality_Duration;
-			//showuntil = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-			timer = pagetime;
-			pagechange = true;
-		} else if (info.errchg) {
-			// show new errors immediately
-			page = Error;
-			//showuntil = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-			timer = pagetime;
-			pagechange = true;
-		}
-		// ensure quick switch to totality in & near totality
-		if ((time.total_seconds() >= (info.start - 32)) &&
-			(time.total_seconds() <= (info.end + 4))
-		) {
-			timer = 1;
-		}
-		
-		assert(tmd->rowPos() == 0);
-		assert(tmd->columnPos() == 0);
-
-		// first line; limit to 7 characters on left; clock is on right
-		switch (page) {
-			case GPS_Status:
-			case GPS_Longitutde:
-			case GPS_Latitude:
-				if (pagechange) {
-					tds << "GPS";
-				}
-				break;
-			case Totality_Duration:
-			case Totality_Start:
-			case Totality_End:
-			case Totality_Wait:
-				if (pagechange) {
-					tds << "Tot ";
-				} else {
-					tds << displays::move(4, 0);
-				}
-				if (info.goodfix) {
-					double dist = haversineEarth(info.chkloc, info.curloc);
-					if (dist < 99.5) {
-						tds << std::setfill(' ') << std::setw(2) << std::right <<
-						std::setprecision(0) << std::fixed << dist << std::left <<
-						'm';
-					} else {
-						tds << "++m";
-					}
-				}
-				break;
-			case System:
-				if (pagechange) {
-					tds << "Sys";
-				}
-				break;
-			case Error:
-				if (pagechange) {
-					tds << "ERROR";
-				}
-				break;
-			case Totality_Remain:
-				if (pagechange) {
-					tds << "Tot now";
-				}
-		}
+		// sample battery status
+		batmon.sample();
 		// get the current time
 		lcd.sampleTime(ts);
+		// reports a synced clock even before GPS has a fix
 		if (!syncdClock  && (ts.accuracy !=
 			duds::data::unspecified<
 				duds::hardware::devices::clocks::LinuxClockDriver::Measurement::TimeSample::Quality
@@ -278,16 +151,99 @@ void runDisplay(
 			syncdClock = true;
 		}
 		// used for time display and computing the delay through this loop (UTC)
-		time = duds::time::planetary::earth->posix(ts.value).time_of_day();
+		time = duds::time::planetary::earth->posix(ts.value).time_of_day() +
+			// be 64ms in the future!
+			boost::posix_time::milliseconds(64);
 		if (testTimeOffset) {
 			time += boost::posix_time::seconds(testTimeOffset);
 		}
+		displaystuff.setTime(time.total_seconds());
+		
+		// check for low voltage
+		if (!lowBatt && (batmon.busVoltage().value < 8.9)) {
+			lowBatt = true;
+			displaystuff.setNotice("Low battery voltage");
+		} else if (!critBatt && (batmon.busVoltage().value < 8.5)) {
+			critBatt = true;
+			displaystuff.setNotice("Very low battery\nvoltage");
+		}
+		// get stuff to display
+		DisplayInfo info(displaystuff.getInfo());
+		
+		// in-totality is the most important page
+		if (pages[InTotality]->select(info, Page::SelectAuto) == Page::SelectPage) {
+			if (page != InTotality) {
+				changePage(InTotality);
+			}
+			// prevent page changes during totality
+			pagechange = true;
+		} else if (page == InTotality) {
+			// see if notice page has something interesting
+			if (pages[Notice]->select(info, Page::SelectAuto) == Page::SelectPage) {
+				changePage(Notice);
+			} else {
+				// force an automatic page advance later
+				timer = 1;
+			}
+		}
+		
+		// second most impotant page is the notice -- shows low battery messages
+		if (!pagechange && info.notchg) {
+			changePage(Notice);
+		}
+		
+		// change on user input; pre-empted by above conditions
+		if (!pagechange) {
+			// display change on input
+			if (inputRotor) {
+				if (inputRotor > 0) {
+					incPage(info, Page::SelectUser);
+				} else {
+					decPage(info, Page::SelectUser);
+				}
+				// show the page longer than after automatic advance
+				timer *= 2;
+				inputRotor = 0;
+			}
+		}
+
+		// output status: have new result?
+		if (!pagechange) {
+			if (info.errchg) {
+				// show new errors immediately
+				changePage(Error);
+			} else if (info.totchg) {
+				// show new result immediately
+				changePage(Totality_Times);
+			}
+		}
+		
+		// automatic advance logic
+		if (!pagechange && !--timer) {
+			incPage(info, Page::SelectAuto);
+		}
+		
+		// show page
+		if (pagechange) {
+			if (page == GPS_Status) {
+				// re-init the display in case of bad communications
+				disp->initialize();
+				disp->move(0, 1);
+			}
+			pages[page]->show(info, tds);
+		} else {
+			pages[page]->update(info, tds);
+		}
+
 		// only output time after the clock has been sync'd once
 		if (syncdClock) {
-			if (pagechange) {
-				tmd->clearTo(7, 0);
-			} else {
-				tmd->move(8, 0);
+			if (disp->rowPos() != 0) {
+				std::cerr << "Bad row position for clock: " << disp->rowPos() <<
+				std::endl;
+				disp->move(10, 0);
+			}
+			if (disp->columnPos() != 12) {
+				disp->clearTo(11, 0);
 			}
 			char sep;
 			if (time.seconds() & 1) {
@@ -299,171 +255,48 @@ void runDisplay(
 			<< sep << std::setw(2) << time.minutes()
 			<< sep << std::setw(2) << time.seconds()
 			<< std::left << std::setfill(' ');
-
-			// test output
-			/*
-			std::cout << '\r' << std::setfill('0') <<
-			std::right << std::setw(2) << time.hours()
-			<< sep << std::setw(2) << time.minutes()
-			<< sep << std::setw(2) << time.seconds()
-			<< std::left << std::setfill(' ');
-			std::cout.flush();
-			*/
 		} else {
-			if (pagechange) {
-				tmd->clearTo(7, 0);
-			}
-			// position for second line
-			tds << displays::move(0, 1);
+			disp->clearTo(0, 1);
 		}
 
-		assert(tmd->rowPos() == 1);
-		assert(tmd->columnPos() == 0);
-		// second line; already positioned
-
-		switch (page) {
-			case GPS_Status:
-				if (info.goodfix) { // show position error each time
-					tds << "Within " << info.locerr << 'm';
-				} else if (pagechange) {  // show lack of fix just once
-					tds << "No fix";
-				}
-				break;
-			case GPS_Longitutde:
-				if (pagechange) {
-					tds << "Lon ";
-				} else {
-					tds << displays::move(4, 1);
-				}
-				tds << std::setprecision(7) << std::setw(12) <<
-				std::fixed << info.curloc.lon;
-				break;
-			case GPS_Latitude:
-				if (pagechange) {
-					tds << "Lat ";
-				} else {
-					tds << displays::move(4, 1);
-				}
-				tds << std::setprecision(7) << std::setw(12) <<
-				std::fixed << info.curloc.lat;
-				break;
-			case Totality_Duration:
-				if (pagechange) {
-					if (info.inTotality) {
-						tds << "Duration " << (info.end - info.start) << 's';
-					} else {
-						tds << "Outside totality";
-					}
-				}
-				break;
-			case Totality_Start:
-				if (pagechange) {
-					tds << "Start" << displays::clearTo(7, 1);
-					writeEclipseTime(tds, info.start);
-				}
-				break;
-			case Totality_End:
-				if (pagechange) {
-					tds << "End  " << displays::clearTo(7, 1);
-					writeEclipseTime(tds, info.end);
-				}
-				break;
-			case Totality_Wait:
-				if (pagechange) {
-					tds << "Wait ";
-				} else {
-					tds << displays::move(5, 1);
-				} {
-					int diff = info.start - time.total_seconds();
-					int h, m, s;
-					h = diff / 3600;
-					m = (diff / 60) - (h * 60);
-					s = diff % 60;
-					tds << std::setw(2) << std::right << h << "h " <<
-					std::setfill('0') << std::setw(2) << m << "m " << std::setw(2)
-					<< s << std::left << std::setfill(' ') << 's';
-				}
-				break;
-			case System:
-				//if (pagechange)
-				{
-					std::ifstream upt("/proc/uptime");
-					int uptime;
-					upt >> uptime;
-					int h, m, s;
-					h = uptime / 3600;
-					m = (uptime / 60) - (h * 60);
-					s = uptime % 60;
-					tds << "Up " << std::setw(2) << std::right << h << "h " <<
-					std::setfill('0') << std::setw(2) << m << "m " << std::setw(2)
-					<< s << std::left << std::setfill(' ') << 's';
-				}
-				break;
-			case Error:
-				if (pagechange) {
-					tds << info.errormsg;
-					displaystuff.decError();
-				}
-				break;
-			case Totality_Remain:
-				if (pagechange) {
-					tds << "Remaining ";
-				} else {
-					tds << displays::move(10, 1);
-				}
-				tds << (info.end - time.total_seconds()) << "s  ";
-		}
-		// if the cursor didn't get past the end of the line when new text output
-		if (((page < Totality_Duration) || pagechange) && (tmd->columnPos() != 0)) {
-			assert(tmd->rowPos() == 1);
-			// clear the rest of the line
-			tmd->clearTo(tmd->columns() - 1, 1);
-			//assert(tmd->rowPos() == 0);
-		} // else {
-			// assure cursor in the right spot
-			//tmd->move(0, 0);
-			//tmd->move(0, 2);
-		//}
-		tmd->move(0, 2);
+		assert(disp->rowPos() == 1);
+		assert(disp->columnPos() == 0);
+		// second line; positioned for page show/update
 		
-		// test lines
-		batmon.sample();
-		tds << "V " << std::setprecision(3) << std::setw(5) <<
-		batmon.busVoltage().value << " A " << std::setprecision(3) <<
-		std::setw(5) << batmon.busCurrent().value << //displays::clearTo(14, 2) << "\nW "
-		// current can go to end of line
-		" " << displays::move(0, 3) << "W " << std::setprecision(3) << std::setw(5) << batmon.busPower().value
-		// add brightness here?
-		<< "     ";
-		assert(tmd->rowPos() == 3);
-		assert(tmd->columnPos() > 3);
-		//<< displays::clearTo(14, 3);  // <-- is that right?
-		//std::cout << "Column " << tmd->columnPos() << "  Row " << tmd->rowPos()
-		//<< std::endl;
-		tmd->move(0, 0);
-		
+		// clear page change
 		pagechange = false;
-		inputRotor = 0;
-		inputButton = 0;
 		// compute time to begining of next second according to the time sample
 		std::chrono::milliseconds delay(
 			1000 - (time.total_milliseconds() % 1000)
 		);
+		// wait idle and check for input
 		if (delay.count() > 0) {
 			poller.wait(delay);
 		} else {
 			std::this_thread::sleep_for(std::chrono::milliseconds(16));
 			poller.check();
 		}
-		/*
-		// if short, increase delay by a second
-		if (delay < std::chrono::milliseconds(16)) {
-			delay += std::chrono::milliseconds(1000);
+		// respond to input
+		if (inputButton || // could change this to a menu if time permits
+		(batmon.busVoltage().value < 8.3)) {
+			int prev = 0, cnt = 0;
+			while ((inputButton != prev) && (cnt < 64)) {
+				if (prev == inputButton) {
+					++cnt;
+				} else {
+					cnt = 0;
+				}
+				prev = inputButton;
+				inputButton = 0;
+				// not sure why this needs a delay
+				poller.wait(std::chrono::milliseconds(2));
+			}
+			quit = 1;
+			int q = system("/sbin/shutdown -h now");
+			// won't get here
+			return;
 		}
-		// delay for the computed time based on the steady clock, not the clock
-		// used for the time sample
-		std::this_thread::sleep_until(std::chrono::steady_clock::now() + delay);
-		*/
+		// user requested display page change handled with auto-advance of page
 	}
 } catch (...) {
 	std::cerr << "Program failed in display thread:\n" <<

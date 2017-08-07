@@ -25,8 +25,7 @@ additional nearby locations.
 
 The umbra_lcd program is intended for use on a portable computer system built around a Raspberry 
 Pi or something similar. It uses GPSD to find its current location, and a HD44780 or compatible 
-LCD to show the results. It presently uses a 16x2 display, but I may change it to a 20x4 display 
-or maybe two 16x2 displays. I also wrote it with the expectation that ntpd will be running and 
+LCD to show the results. It uses a 20x4 display and a rotary encoder with a button, although use of input is still limited. I also wrote it with the expectation that ntpd will be running and 
 synchronizing the clock with GPS.
 
 What the umbra_lcd program does not yet do that I'd like it to:

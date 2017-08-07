@@ -1,0 +1,22 @@
+/dts-v1/;
+/plugin/;
+/ {
+   compatible = "brcm,bcm2835", "brcm,bcm2708", "brcm,bcm2709";
+   
+   fragment@0 {
+	  target-path = "/";
+	  __overlay__ {
+		 keypad: rotary_key {
+			compatible = "gpio-keys";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			#autorepeat;
+			button@22 {
+			   label = "rotary key";
+			   linux,code = <194>;
+			   gpios = <&gpio 22 1>;
+			};
+		 };
+	  };
+   };
+};

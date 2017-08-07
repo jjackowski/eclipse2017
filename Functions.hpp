@@ -10,6 +10,7 @@
  * Copyright (C) 2017  Jeff Jackowski
  */
 #include <duds/time/interstellar/Interstellar.hpp>
+#include <iostream>
 
 struct Location {
 	double lon;
@@ -41,3 +42,23 @@ void sunPosition(
 	const Location &loc,
 	const duds::time::interstellar::SecondTime &time
 );
+
+/**
+ * Hours-minutes-seconds; needed for displaying time durations.
+ */
+struct Hms {
+	int h, m, s;
+	Hms() = default;
+	Hms(int seconds) {
+		set(seconds);
+	}
+	Hms(std::chrono::seconds seconds) {
+		set(seconds.count());
+	}
+	void set(int seconds);
+	void set(std::chrono::seconds seconds) {
+		set(seconds.count());
+	}
+	void writeDuration(std::ostream &os);
+	void writeTime(std::ostream &os);
+};

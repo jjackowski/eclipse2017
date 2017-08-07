@@ -76,7 +76,7 @@ try {
 		"\nUser should verify that time is UTC. It may be offset, "
 		"or may be just fine." << std::endl;
 		// error message for display must be short to fit
-		displaystuff.setError("No leaps; UTC?", 64);
+		displaystuff.setError("No leaps; time may\nbe off; likely good", 64);
 	}
 	// ----- test values -----
 	double testLatOffset = 0;
@@ -133,14 +133,16 @@ try {
 	// LCD driver
 	std::shared_ptr<displays::HD44780> tmd =
 		std::make_shared<displays::HD44780>(
-			lcdset, lcdsel, 16, 4
+			lcdset, lcdsel, 20, 4
 		);
 	tmd->initialize();
 
-	// start LCD output thread
-	std::thread displayThread(&runDisplay, tmd, std::ref(batmon), testTimeOffset);
-
 	duds::hardware::interface::DigitalPin buzzer(port, 6);
+
+	RunDisplay ui(tmd, batmon, buzzer, testTimeOffset);
+	// start LCD output thread
+	std::thread displayThread(&RunDisplay::run, std::ref(ui));
+
 	// ----- GPS -----
 	// attempt to connect to GPSD
 	std::unique_ptr<gpsmm> gps(new gpsmm("localhost", DEFAULT_GPSD_PORT));
@@ -155,7 +157,8 @@ try {
 	auto lastCheck = std::chrono::system_clock::now() - std::chrono::minutes(2);
 	std::future<void> eclipseCalc;
 	gps_data_t *gpsInfo;
-	
+	double speed = 0;  // in m/s
+
 	// until signal requests termination
 	while (!quit) {
 		if (gps) {
@@ -167,10 +170,11 @@ try {
 		}
 		// failed?
 		if (!gps || !gpsInfo) {
+			speed = 0;
 			// attempt to re-establish contact with gpsd
 			gps.reset();
 			do {
-				displaystuff.setError("Lost gpsd connec", 8);
+				displaystuff.setError("Lost gpsd connection", 8);
 				gps = std::unique_ptr<gpsmm>(
 					new gpsmm("localhost", DEFAULT_GPSD_PORT)
 				);
@@ -180,29 +184,34 @@ try {
 				}
 			} while (!gps);
 			displaystuff.clearError();
-		} else if (gps && (gpsInfo->set & LATLON_SET)) {
-			if (gpsInfo->fix.mode != MODE_3D) {
+		} else if (gps) {
+			if ((gpsInfo->status == 0) || (gpsInfo->fix.mode != MODE_3D)) {
 				displaystuff.badFix();
-			} else {
+			}
+			if (gpsInfo->set & SPEED_SET) {
+				speed = 0.8 * speed + gpsInfo->fix.speed;
+			}
+			if (gpsInfo->set & LATLON_SET) {
 				curr.lon = gpsInfo->fix.longitude - testLatOffset / 2;
 				curr.lat = gpsInfo->fix.latitude + testLatOffset;
 				displaystuff.setCurrLoc(
 					curr ,
-					(int)std::max(gpsInfo->fix.epy, gpsInfo->fix.epx)
+					(int)std::max(gpsInfo->fix.epy, gpsInfo->fix.epx),
+					gpsInfo->satellites_used
 				);
 				/** @todo  Do not check for totality after totality. */
 				auto now = std::chrono::system_clock::now();
 				auto diff = now - lastCheck;
 				// do not recompute too often
-				if (diff > std::chrono::seconds(96)) {
+				if (diff > std::chrono::seconds(128)) {
 					double dist = haversineEarth(prev, curr);
 					// if the distance has changed by more than 32m, or
 					// the distance has changed by at least 5m and half the
 					// distance minus (minutes since last recompute) is
 					// negative, then . . .
-					if ((dist > 32.0) || ((dist >= 5.0) &&
-						((16.0 - dist * 0.5 - std::chrono::duration_cast<std::chrono::minutes>(diff).count()) < 0)
-					)) {
+					if ((speed < 2.5) && ((dist > 32.0) || ((dist >= 5.0) &&
+						((20.0 - dist * 0.5 - std::chrono::duration_cast<std::chrono::minutes>(diff).count()) < 0)
+					))) {
 						lastCheck = now;
 						prev = curr;
 						// start computing total eclipse length
@@ -221,7 +230,7 @@ try {
 					}
 				}
 			}
-		} else if (!gps || ~gpsInfo->status & STATUS_FIX) {
+		} else {
 			displaystuff.badFix();
 		}
 	}

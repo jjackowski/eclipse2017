@@ -1,0 +1,87 @@
+gpu_mem=16
+
+# camera
+#gpu_mem=128
+#start_x=1
+#disable_camera_led=1
+
+# uncomment if you get no picture on HDMI for a default "safe" mode
+#hdmi_safe=1
+
+# uncomment this if your display has a black border of unused pixels visible
+# and your display can output without overscan
+#disable_overscan=1
+
+# uncomment the following to adjust overscan. Use positive numbers if console
+# goes off screen, and negative if there is too much border
+#overscan_left=16
+#overscan_right=16
+#overscan_top=16
+#overscan_bottom=16
+
+# uncomment to force a console size. By default it will be display's size minus
+# overscan.
+#framebuffer_width=1280
+#framebuffer_height=720
+
+# uncomment if hdmi display is not detected and composite is being output
+#hdmi_force_hotplug=1
+
+# custom mode (87) for SGI 1600SW monitor
+#hdmi_cvt 1600 1024 60 5 0 0 0
+
+# uncomment to force a specific HDMI mode (this will force VGA)
+# group 2 for DVI
+#hdmi_group=2
+#hdmi_mode=35  # 1280x1024
+
+# uncomment to force a HDMI mode rather than DVI. This can make audio work in
+# DMT (computer monitor) modes
+#hdmi_drive=2
+
+# uncomment to increase signal to HDMI, if you have interference, blanking, or
+# no display
+#config_hdmi_boost=5
+
+# uncomment for composite PAL
+#sdtv_mode=2
+
+#arm_freq=900
+arm_freq_min=500
+#gpu_freq=300
+#sdram_freq=450
+temp_limit=75
+
+# Additional overlays and parameters are documented /boot/overlays/README
+
+dtparam=i2c_arm=on
+#dtparam=audio=on
+#dtparam=uart0=off
+# default SPI makes UART receive an output that drives the line high
+#dtparam=spi=on
+#dtoverlay=spi1-1cs,cs0_pin=26
+
+# I2C GPIO
+#dtoverlay=i2c_gpio,i2c_gpio_sda=<pin>,i2c_gpio_scl=<pin>,i2c_gpio_delay_us=2
+
+# w1 GPIO
+#dtoverlay=w1-gpio
+
+# disable ACT LED on the Pi Zero
+#dtparam=act_led_trigger=none
+dtparam=act_led_activelow=on
+
+##### GPS related items
+# use the better UART for GPS; disables Bluetooth
+dtoverlay=pi3-disable-bt
+# PPS on GPIO #18
+dtoverlay=pps-gpio,gpiopin=18
+
+# PWM
+dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4
+
+# encoder
+dtoverlay=rotary-encoder,rotary0_pin_a=17,rotary0_pin_b=27
+dtoverlay=rotary_key
+
+# for more options see http://elinux.org/RPi_config.txt
