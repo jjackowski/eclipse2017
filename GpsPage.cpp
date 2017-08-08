@@ -26,7 +26,7 @@ void GpsPage::show(
 	if (di.goodfix) {
 		within = di.locerr;
 		sats = di.sats;
-		tds << "Within " << within << 'm' << clearTo(12, 1) << "Sats " << 
+		tds << "Within " << within << 'm' << clearTo(12, 1) << "Sats " <<
 		std::left << std::setw(2) << sats;
 		//<< startLine;
 	} else {

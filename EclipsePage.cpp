@@ -9,73 +9,74 @@
  *
  * Copyright (C) 2017  Jeff Jackowski
  */
-#include "TotalityPage.hpp"
+#include "EclipsePage.hpp"
+#include <sstream>
 
 using duds::hardware::devices::displays::clearTo;
 using duds::hardware::devices::displays::move;
 using duds::hardware::devices::displays::startLine;
 
-Page::SelectionResponse TotalityPage::select(
+Page::SelectionResponse EclipsePage::select(
 	const DisplayInfo &di,
 	SelectionCause sc
 ) {
-	if ((sc == SelectUser) || ((di.now < di.start) && (di.start < 86400))) {
+	if (di.inTotality && ((sc == SelectUser) || (di.now < (di.end + 5049)))) {
 		return SelectPage;
 	}
 	return SkipPage;
 }
 
-void TotalityPage::showdist(
+void EclipsePage::timeTillEnd(
 	const DisplayInfo &di,
 	duds::hardware::devices::displays::TextDisplayStream &tds
 ) {
-	double d = haversineEarth(di.chkloc, di.curloc);
-	if (d != dist) {
-		dist = d;
-		if (dist < 999.5) {
-			tds << std::setw(3) << std::right << std::setprecision(0) <<
-			std::fixed << dist << std::left << 'm';
-		} else if (dist < 99499.0) {
-			tds << std::setw(2) << std::right << std::setprecision(0) <<
-			std::fixed << (dist / 1000.0) << std::left << "km";
-		} else {
-			tds << "+++m";
-		}
-	}
-}
-
-void TotalityPage::show(
-	const DisplayInfo &di,
-	duds::hardware::devices::displays::TextDisplayStream &tds
-) {
-	if (di.inTotality) {
-		Hms time(di.start);
-		tds << "Start" << clearTo(11, 1);
-		time.writeTime(tds);
-		tds << "End" << clearTo(11, 2);
-		time.set(di.end);
-		time.writeTime(tds);
-		tds << "Duration " << (di.end - di.start) << "s\nTotal ";
-		dist = -1.0;
-		if (di.goodfix) {
-			showdist(di, tds);
-		}
+	Hms time;
+	int when = di.end + 5049 - di.now;
+	if (when >= 0) {
+		time.set(when);
+		tds << "End in ";
 	} else {
-		tds << "Outside totality\n\n\nTotal";
+		time.set(-when);
+		tds << "Over ";
 	}
+	time.writeDuration(tds);
 }
 
-void TotalityPage::update(
+void EclipsePage::show(
+	const DisplayInfo &di,
+	duds::hardware::devices::displays::TextDisplayStream &tds
+) {
+	Hms time(di.start - 5302);
+	tds << "Start" << clearTo(11, 1);
+	time.writeTime(tds);
+	tds << "End" << clearTo(11, 2);
+	time.set(di.end + 5049);
+	time.writeTime(tds);
+	if (di.now < (di.start - 5302)) {
+		tds << "Start in ";
+		time.set(di.start - 5302 - di.now);
+		time.writeDuration(tds);
+	} else {
+		timeTillEnd(di, tds);
+	}
+	tds << startLine << "Eclipse";
+}
+
+void EclipsePage::update(
 	const DisplayInfo &di,
 	duds::hardware::devices::displays::TextDisplayStream &tds
 ) {
 	if (di.totchg) {
 		show(di, tds);
 	} else {
-		if (di.goodfix) {
-			tds << move(6, 0);
-			showdist(di, tds);
+		tds << move(0, 3);
+		if (di.now < (di.start - 5302)) {
+			Hms time(di.start - 5302 - di.now);
+			tds << "Start in ";
+			time.writeDuration(tds);
+		} else {
+			timeTillEnd(di, tds);
 		}
-		tds << move(12, 0);
+		tds << startLine << move(12, 0);
 	}
 }

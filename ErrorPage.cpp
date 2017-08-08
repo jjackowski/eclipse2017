@@ -16,7 +16,12 @@ using duds::hardware::devices::displays::clearTo;
 using duds::hardware::devices::displays::move;
 using duds::hardware::devices::displays::startLine;
 
-Page::SelectionResponse ErrorPage::select(const DisplayInfo &di, SelectionCause sc) {
+extern DisplayStuff displaystuff;
+
+Page::SelectionResponse ErrorPage::select(
+	const DisplayInfo &di,
+	SelectionCause sc
+) {
 	if ((sc == SelectUser) || (di.errcnt > 0)) {
 		return SelectPage;
 	} return SkipPage;
@@ -29,7 +34,7 @@ void ErrorPage::show(
 	if (di.errormsg.empty()) {
 		tds << "No error.\n\n\nError";
 	} else {
-		//decError();
+		displaystuff.decError();  // shown once
 		tds << "Time occur  ";
 		Hms time(di.errtime);
 		time.writeTime(tds);
@@ -37,7 +42,7 @@ void ErrorPage::show(
 		for (int cnt = 0; (cnt < 40) && (iter != di.errormsg.cend()); ++cnt, ++iter) {
 			tds << *iter;
 		}
-		tds << move(0, 0);
+		tds << clearTo(19, 3);
 		tds << "Error";
 	}
 }

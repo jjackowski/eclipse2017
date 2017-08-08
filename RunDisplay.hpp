@@ -46,8 +46,11 @@ class RunDisplay : boost::noncopyable {
 	 */
 	enum DisplayPage {
 		GPS_Status,
+		Elcipse_Times,
 		Totality_Times,
 		Totality_Wait,
+		Sun_Azimuth,
+		Sun_Now,
 		System,
 		Error,
 		Notice,
@@ -69,11 +72,11 @@ class RunDisplay : boost::noncopyable {
 	int timer;
 	bool pagechange;
 	bool syncdClock;
-	
+
 	void incPage(const DisplayInfo &di, Page::SelectionCause sc);
 	void decPage(const DisplayInfo &di, Page::SelectionCause sc);
 	void changePage(int p);
-	
+
 public:
 	RunDisplay(
 		const std::shared_ptr<duds::hardware::devices::displays::HD44780> &hd,

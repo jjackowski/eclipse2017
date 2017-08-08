@@ -58,5 +58,4 @@ void SystemPage::update(
 		std::setprecision(3) << watts << 'W';
 	}
 	tds << move(12, 0);
-
 }

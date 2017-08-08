@@ -1,9 +1,14 @@
 Import('*')
 
 if 'LIBEVDEV' in env:
-	lib = env.StaticLibrary('eclipse2017', Glob('[FUP]*.cpp') + ['Input.cpp'])
+	lib = env.StaticLibrary('eclipse2017', Glob('[FUP]*.cpp') + [
+		'Input.cpp',
+		'SunPositionTable.cpp'
+	])
 else:
-	lib = env.StaticLibrary('eclipse2017', Glob('[FUP]*.cpp'))
+	lib = env.StaticLibrary('eclipse2017', Glob('[FUP]*.cpp') + [
+		'SunPositionTable.cpp'
+	])
 
 env_duds = env.Clone()
 env_duds.AppendUnique(
@@ -40,7 +45,13 @@ else:
 if 'LIBDUDS' in env and 'LIBGPS' in env and 'LIBEVDEV' in env:
 	targets.append(
 		env_lcd.Program('umbra_lcd',
-			['umbra_lcd.cpp', 'InTotalityPage.cpp'] + Glob('[DEGNRST]*.cpp') + lib
+			Glob('[DEGNRT]*.cpp') + [
+				'umbra_lcd.cpp',
+				'InTotalityPage.cpp',
+				'SunPage.cpp',
+				'SunAzimuthPage.cpp',
+				'SystemPage.cpp'
+			] + lib
 		)
 	)
 

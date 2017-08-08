@@ -13,9 +13,12 @@
 #include "RunDisplay.hpp"
 #include "Input.hpp"
 #include "GpsPage.hpp"
+#include "EclipsePage.hpp"
 #include "TotalityWaitPage.hpp"
 #include "InTotalityPage.hpp"
 #include "SystemPage.hpp"
+#include "SunPage.hpp"
+#include "SunAzimuthPage.hpp"
 #include "ErrorPage.hpp"
 #include "NoticePage.hpp"
 #include <iostream>
@@ -65,23 +68,27 @@ RunDisplay::RunDisplay(
 pagechange(true), syncdClock(false), page(System), timer(pagetime) { }
 
 void RunDisplay::incPage(const DisplayInfo &di, Page::SelectionCause sc) {
-	Page::SelectionResponse sr;
+	Page::SelectionResponse sr = Page::SkipPage;
 	do {
 		if (++page >= PageCycle) {
 			page = GPS_Status;
 		}
-		sr = pages[page]->select(di, sc);
+		if (pages[page]) {
+			sr = pages[page]->select(di, sc);
+		}
 	} while (sr == Page::SkipPage);
 	changePage(page);
 }
 
 void RunDisplay::decPage(const DisplayInfo &di, Page::SelectionCause sc) {
-	Page::SelectionResponse sr;
+	Page::SelectionResponse sr = Page::SkipPage;
 	do {
 		if (--page < GPS_Status) {
 			page = PageCycle - 1;
 		}
-		sr = pages[page]->select(di, sc);
+		if (pages[page]) {
+			sr = pages[page]->select(di, sc);
+		}
 	} while (sr == Page::SkipPage);
 	changePage(page);
 }
@@ -123,16 +130,31 @@ try {
 	}
 	bool lowBatt = false;
 	bool critBatt = false;
-	
+	SunPositionTableShared spt;
+	try {
+		spt = std::make_shared<SunPositionTable>(
+			"Alt_Az_Table", 5 * 3600
+		);
+	} catch (...) {
+		std::cerr << "Failed to read sun position table:\n" <<
+		boost::current_exception_diagnostic_information() << std::endl;
+		displaystuff.setError("Failed to read sun position table", 64);
+	}
+
 	// create Page objects
 	pages[GPS_Status] = std::unique_ptr<Page>(new GpsPage);
+	pages[Elcipse_Times] = std::unique_ptr<Page>(new EclipsePage);
 	pages[Totality_Times] = std::unique_ptr<Page>(new TotalityPage);
 	pages[Totality_Wait] = std::unique_ptr<Page>(new TotalityWaitPage);
+	if (spt) {
+		pages[Sun_Azimuth] = std::unique_ptr<Page>(new SunAzimuthPage(spt));
+		pages[Sun_Now] = std::unique_ptr<Page>(new SunPage(spt));
+	}
 	pages[System] = std::unique_ptr<Page>(new SystemPage(batmon));
 	pages[Error] = std::unique_ptr<Page>(new ErrorPage);
 	pages[Notice] = std::unique_ptr<Page>(new NoticePage);
 	pages[InTotality] = std::unique_ptr<Page>(new InTotalityPage);
-	
+
 	// start on second line
 	disp->move(0, 1);
 
@@ -158,7 +180,7 @@ try {
 			time += boost::posix_time::seconds(testTimeOffset);
 		}
 		displaystuff.setTime(time.total_seconds());
-		
+
 		// check for low voltage
 		if (!lowBatt && (batmon.busVoltage().value < 8.9)) {
 			lowBatt = true;
@@ -169,7 +191,7 @@ try {
 		}
 		// get stuff to display
 		DisplayInfo info(displaystuff.getInfo());
-		
+
 		// in-totality is the most important page
 		if (pages[InTotality]->select(info, Page::SelectAuto) == Page::SelectPage) {
 			if (page != InTotality) {
@@ -186,12 +208,12 @@ try {
 				timer = 1;
 			}
 		}
-		
+
 		// second most impotant page is the notice -- shows low battery messages
 		if (!pagechange && info.notchg) {
 			changePage(Notice);
 		}
-		
+
 		// change on user input; pre-empted by above conditions
 		if (!pagechange) {
 			// display change on input
@@ -202,7 +224,7 @@ try {
 					decPage(info, Page::SelectUser);
 				}
 				// show the page longer than after automatic advance
-				timer *= 2;
+				timer *= 4;
 				inputRotor = 0;
 			}
 		}
@@ -217,12 +239,12 @@ try {
 				changePage(Totality_Times);
 			}
 		}
-		
+
 		// automatic advance logic
 		if (!pagechange && !--timer) {
 			incPage(info, Page::SelectAuto);
 		}
-		
+
 		// show page
 		if (pagechange) {
 			if (page == GPS_Status) {
@@ -256,13 +278,13 @@ try {
 			<< sep << std::setw(2) << time.seconds()
 			<< std::left << std::setfill(' ');
 		} else {
-			disp->clearTo(0, 1);
+			disp->clearTo(19, 0);
 		}
 
 		assert(disp->rowPos() == 1);
 		assert(disp->columnPos() == 0);
 		// second line; positioned for page show/update
-		
+
 		// clear page change
 		pagechange = false;
 		// compute time to begining of next second according to the time sample

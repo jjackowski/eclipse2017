@@ -35,12 +35,11 @@ void TotalityWaitPage::show(
 	if (di.start > di.now) {
 		tds << "Wait     "; 
 		time.set(di.start - di.now);
-		time.writeDuration(tds);
 	} else {
 		tds << "Over     "; 
 		time.set(di.now - di.end);
-		time.writeDuration(tds);
 	}
+	time.writeDuration(tds);
 	tds << startLine << "Duration ";
 	time.set(di.end - di.start);
 	time.writeDuration(tds);

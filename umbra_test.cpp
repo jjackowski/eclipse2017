@@ -11,14 +11,15 @@
  */
 #include "Umbra.hpp"
 #include "Functions.hpp"
-#include "BuildConfig.h"
+#include "SunPositionTable.hpp"
+//#include "BuildConfig.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <boost/exception/diagnostic_information.hpp>
 #include <duds/time/planetary/Planetary.hpp>
 
-void check(Umbra &umbra, const std::string &input) {
+void check(Umbra &umbra, const SunPositionTable &spt, const std::string &input) {
 	std::istringstream is(input);
 	double lon, lat;
 	is >> lon >> lat;
@@ -40,6 +41,7 @@ void check(Umbra &umbra, const std::string &input) {
 			<< std::setw(2) << s << " for a duration of " <<
 			(umbra.endTime() - umbra.startTime()) << " seconds." << std::endl;
 			#ifdef HAVE_LIBDUDS
+			/*
 			double a, e, ab, ae, eb, ee;
 			Location l(lon, lat);
 			duds::time::interstellar::SecondTime t;
@@ -56,7 +58,18 @@ void check(Umbra &umbra, const std::string &input) {
 			std::cout << "\tSun at mid-totality: azimuth " << a << "  elevation "
 			<< e << "\n\tChange from -90 to +90 minutes:  azimuth " <<
 			(ae - ab) << "  elevation " << (ee - eb) << std::endl;
+			*/
 			#endif
+			SunPositionTable::Position start, mid, end;
+			mid = spt.lookup(
+				umbra.startTime() + (umbra.endTime() - umbra.startTime()) / 2
+			);
+			start = spt.lookup(umbra.startTime() - 5302);
+			end = spt.lookup(umbra.endTime() + 5049);
+			std::cout << "\tSun at mid-totality: azimuth " << mid.azimuth <<
+			"  elevation " << mid.elevation << "\n\tChange from start to end: "
+			" azimuth " << (end.azimuth - start.azimuth) << "  elevation " <<
+			(end.elevation - start.elevation) << std::endl;
 		} else {
 			std::cout << "Total eclipse not visible." << std::endl;
 		}
@@ -66,8 +79,9 @@ void check(Umbra &umbra, const std::string &input) {
 int main(int argc, char *argv[])
 try {
 	#ifdef HAVE_LIBDUDS
-	duds::time::planetary::Earth::make();
+	//duds::time::planetary::Earth::make();
 	#endif
+	SunPositionTable spt("Alt_Az_Table", 5 * 3600);
 	std::string path;
 	if ((argc == 2) || (argc == 4)) { // 1 or 3 arguments
 		path = argv[1];
@@ -78,7 +92,7 @@ try {
 	if ((argc == 3) || (argc == 4)) { // 2 or 3 arguments
 		std::string lonlat = argv[argc - 2];
 		lonlat += std::string(" ") + argv[argc - 1];
-		check(umbra, lonlat);
+		check(umbra, spt, lonlat);
 	} else {
 		std::cout << "Enter longitude (negative) followed by latitude "
 		"(positive) separated by spaces.\nEnter an empty line or 'q' to quit."
@@ -89,7 +103,7 @@ try {
 			if (input.empty() || (input[0] == 'q')) {
 				break;
 			}
-			check(umbra, input);
+			check(umbra, spt, input);
 		} while (true);
 	}
 	return 0;
