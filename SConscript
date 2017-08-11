@@ -48,6 +48,7 @@ if 'LIBDUDS' in env and 'LIBGPS' in env and 'LIBEVDEV' in env:
 			Glob('[DEGNRT]*.cpp') + [
 				'umbra_lcd.cpp',
 				'InTotalityPage.cpp',
+				'SchedulePage.cpp',
 				'SunPage.cpp',
 				'SunAzimuthPage.cpp',
 				'SystemPage.cpp'

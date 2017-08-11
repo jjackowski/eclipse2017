@@ -51,6 +51,7 @@ class RunDisplay : boost::noncopyable {
 		Totality_Wait,
 		Sun_Azimuth,
 		Sun_Now,
+		Schedule,
 		System,
 		Error,
 		Notice,

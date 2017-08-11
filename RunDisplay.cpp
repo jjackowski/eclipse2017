@@ -19,6 +19,7 @@
 #include "SystemPage.hpp"
 #include "SunPage.hpp"
 #include "SunAzimuthPage.hpp"
+#include "SchedulePage.hpp"
 #include "ErrorPage.hpp"
 #include "NoticePage.hpp"
 #include <iostream>
@@ -128,6 +129,7 @@ try {
 			}
 		} while (inputRotor || inputButton || prev || (cnt < 64));
 	}
+	double batvolt = 12.0;
 	bool lowBatt = false;
 	bool critBatt = false;
 	SunPositionTableShared spt;
@@ -150,6 +152,7 @@ try {
 		pages[Sun_Azimuth] = std::unique_ptr<Page>(new SunAzimuthPage(spt));
 		pages[Sun_Now] = std::unique_ptr<Page>(new SunPage(spt));
 	}
+	pages[Schedule] = std::unique_ptr<Page>(new SchedulePage);
 	pages[System] = std::unique_ptr<Page>(new SystemPage(batmon));
 	pages[Error] = std::unique_ptr<Page>(new ErrorPage);
 	pages[Notice] = std::unique_ptr<Page>(new NoticePage);
@@ -162,6 +165,7 @@ try {
 	while (!quit) {
 		// sample battery status
 		batmon.sample();
+		batvolt = 0.8 * batvolt + 0.2 * batmon.busVoltage().value;
 		// get the current time
 		lcd.sampleTime(ts);
 		// reports a synced clock even before GPS has a fix
@@ -182,10 +186,10 @@ try {
 		displaystuff.setTime(time.total_seconds());
 
 		// check for low voltage
-		if (!lowBatt && (batmon.busVoltage().value < 8.9)) {
+		if (!lowBatt && (batvolt < 8.9)) {
 			lowBatt = true;
 			displaystuff.setNotice("Low battery voltage");
-		} else if (!critBatt && (batmon.busVoltage().value < 8.5)) {
+		} else if (!critBatt && (batvolt < 8.5)) {
 			critBatt = true;
 			displaystuff.setNotice("Very low battery\nvoltage");
 		}
@@ -300,7 +304,7 @@ try {
 		}
 		// respond to input
 		if (inputButton || // could change this to a menu if time permits
-		(batmon.busVoltage().value < 8.3)) {
+		(batvolt < 8.2)) {
 			int prev = 0, cnt = 0;
 			while ((inputButton != prev) && (cnt < 64)) {
 				if (prev == inputButton) {
