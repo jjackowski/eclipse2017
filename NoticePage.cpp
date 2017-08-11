@@ -36,10 +36,10 @@ void NoticePage::show(
 		Hms time(di.notetime);
 		time.writeTime(tds);
 		std::string::const_iterator iter = di.noticemsg.cbegin();
-		for (int cnt = 0; (cnt < 40) && (iter != di.noticemsg.cend()); ++cnt) {
+		for (int cnt = 0; (cnt < 40) && (iter != di.noticemsg.cend()); ++cnt, ++iter) {
 			tds << *iter;
 		}
-		tds << move(0, 0);
+		tds << clearTo(19, 3);
 		tds << "Notice";
 	}
 }
