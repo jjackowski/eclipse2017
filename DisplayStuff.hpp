@@ -59,6 +59,9 @@ public:
 	void clearError();
 	void decError();
 	DisplayInfo getInfo();
+	const bool wasGood() const {
+		return info.goodfix;  // only used by one thread
+	}
 };
 
 #endif        //  #ifndef DISPLAYSTUFF_HPP

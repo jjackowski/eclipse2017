@@ -152,9 +152,8 @@ try {
 	}
 	// distant initial location helps ensure an early totality check
 	Location prev(0.0, 0.0), curr;
-	// claim that the last totality check was 2 minutes ago gets past
-	// minimum time check
-	auto lastCheck = std::chrono::system_clock::now() - std::chrono::minutes(2);
+	// claim that the last totality check was 1 minute ago
+	auto lastCheck = std::chrono::system_clock::now() - std::chrono::minutes(1);
 	std::future<void> eclipseCalc;
 	gps_data_t *gpsInfo;
 	double speed = 0;  // in m/s
@@ -185,23 +184,38 @@ try {
 			} while (!gps);
 			displaystuff.clearError();
 		} else if (gps) {
-			if ((gpsInfo->status == 0) || (gpsInfo->fix.mode != MODE_3D)) {
+			if (                                  // with no satellite signals,
+				(gpsInfo->status == 0) ||         // the first two conditionals
+				(gpsInfo->fix.mode != MODE_3D) || // usually are false, so 3D
+				(gpsInfo->satellites_used == 0)   // fix with no satillites is
+			) {                                   // possible?
 				displaystuff.badFix();
 			}
+			// keep exponential moving average of speed for deciding when to
+			// recalculate times of totality
 			if (gpsInfo->set & SPEED_SET) {
-				speed = 0.8 * speed + gpsInfo->fix.speed;
+				speed = 0.8 * speed + 0.2 * gpsInfo->fix.speed;
 			}
 			if (gpsInfo->set & LATLON_SET) {
-				curr.lon = gpsInfo->fix.longitude - testLatOffset / 2;
-				curr.lat = gpsInfo->fix.latitude + testLatOffset;
+				auto now = std::chrono::system_clock::now();
+				auto diff = now - lastCheck;
+				if (!displaystuff.wasGood()) {
+					curr.lon = gpsInfo->fix.longitude - testLatOffset / 2;
+					curr.lat = gpsInfo->fix.latitude + testLatOffset;
+				} else {
+					curr.lon = curr.lon * (1.0 - 0.5 / gpsInfo->fix.epx) +
+						0.5 / gpsInfo->fix.epx *
+						(gpsInfo->fix.longitude - testLatOffset / 2);
+					curr.lat = curr.lat * (1.0 - 0.5 / gpsInfo->fix.epy) +
+						0.5 / gpsInfo->fix.epy *
+						(gpsInfo->fix.latitude + testLatOffset);
+				}
 				displaystuff.setCurrLoc(
 					curr ,
 					(int)std::max(gpsInfo->fix.epy, gpsInfo->fix.epx),
 					gpsInfo->satellites_used
 				);
 				/** @todo  Do not check for totality after totality. */
-				auto now = std::chrono::system_clock::now();
-				auto diff = now - lastCheck;
 				// do not recompute too often
 				if (diff > std::chrono::seconds(128)) {
 					double dist = haversineEarth(prev, curr);
