@@ -251,9 +251,16 @@ try {
 		}
 	}
 	// wait for threads to end
-	eclipseCalc.get();
 	try {
-		displayThread.join();
+		eclipseCalc.get();
+	} catch (...) {
+		// may not have run the thread; ignore
+	}
+	try {
+		// doesn't seem thread-safe, but next line hangs process without it
+		if (displayThread.joinable()) {
+			displayThread.join();
+		}
 	} catch (const std::system_error& e) {
 		// invalid_argument may occur if thread has terminated
 		if (e.code() != std::errc::invalid_argument) {
