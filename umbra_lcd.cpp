@@ -14,6 +14,7 @@
 #include <duds/hardware/interface/DigitalPin.hpp>
 #include <duds/general/IntegerBiDirIterator.hpp>
 #include <duds/time/planetary/Planetary.hpp>
+// would have been used if backlight control was integrated into this program
 //#include <duds/hardware/devices/instruments/TSL2591.hpp>
 //#include <duds/hardware/interface/linux/SysPwm.hpp>
 //#include <duds/hardware/interface/linux/DevI2c.hpp>
@@ -27,6 +28,7 @@
 #include <future>
 #include <sstream>
 #include <csignal>
+#include <system_error>
 #include <libgpsmm.h>
 #include <boost/exception/diagnostic_information.hpp>
 
@@ -250,7 +252,15 @@ try {
 	}
 	// wait for threads to end
 	eclipseCalc.get();
-	displayThread.join();
+	try {
+		displayThread.join();
+	} catch (const std::system_error& e) {
+		// invalid_argument may occur if thread has terminated
+		if (e.code() != std::errc::invalid_argument) {
+			// something else
+			throw;
+		}
+	}
 	std::cout << std::endl;
 	return 0;
 } catch (...) {

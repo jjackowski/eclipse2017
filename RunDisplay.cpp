@@ -303,8 +303,11 @@ try {
 			poller.check();
 		}
 		// respond to input
-		if (inputButton || // could change this to a menu if time permits
-		(batvolt < 8.2)) {
+		if (inputButton || // Shutdown if requested, or if the battery is
+			// running low and the eclipse is over. If eclipse is not over, then
+			// keep going and risk damaging the batteries.
+			((batvolt < 8.2) && (info.now > (info.end + 5055)))
+		) {
 			int prev = 0, cnt = 0;
 			while ((inputButton != prev) && (cnt < 64)) {
 				if (prev == inputButton) {
@@ -318,6 +321,10 @@ try {
 				poller.wait(std::chrono::milliseconds(2));
 			}
 			quit = 1;
+			// assure buzzer is off
+			std::unique_ptr<duds::hardware::interface::DigitalPinAccess> buz =
+				buzzer.access();
+			buz->output(false);
 			int q = system("/sbin/shutdown -h now");
 			// won't get here
 			return;

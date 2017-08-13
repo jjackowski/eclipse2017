@@ -34,15 +34,21 @@ void SchedulePage::makeEvents(const DisplayInfo &di) {
 	std::ostringstream oss;
 	evtbl.clear();
 	double t = double(di.start - 5302);
-	// event names limited to 11 chars
+	// event names limited to 11 chars; rest not shown
 	evtbl[(int)t] = "Start pic";
 	int cnt = 1; // pic 0 is start
 	for (t += 5302.0/8.0; cnt < 8; ++cnt, t += 5302.0/8.0) {
 		oss << "Part pic " << cnt;
 		evtbl[(int)t] = oss.str();
 		oss.str(std::string());
+		if (cnt == 6) {
+			// I'd like to record video starting before totality.
+			evtbl[(int)t + 32] = "Setup video";
+		}
 	}
 	evtbl[di.start] = "Totality";
+	// this goes with audible prompt
+	evtbl[di.start + (di.end - di.start) / 2] = "Mid-totalit"; // 'y' won't fit
 	for (t = (double)di.end + 5049.0/8.0; cnt < 15; ++cnt, t += 5049.0/8.0) {
 		oss << "Part pic " << cnt;
 		evtbl[(int)t] = oss.str();
@@ -53,6 +59,7 @@ void SchedulePage::makeEvents(const DisplayInfo &di) {
 	startT = di.start;
 	
 	// test code
+	/*
 	std::cout << "Start time: " << (di.start - 5302);
 	EventTable::iterator iter = evtbl.begin();
 	for (; iter != evtbl.end(); ++iter) {
@@ -62,6 +69,7 @@ void SchedulePage::makeEvents(const DisplayInfo &di) {
 		std::cout << " - " << iter->second;
 	}
 	std::cout << "\nEnd time: " << (di.end + 5049) << std::endl;
+	*/
 }
 
 void SchedulePage::show(
@@ -118,6 +126,7 @@ void SchedulePage::update(
 			tds << move(9, 2);
 			Hms time(shownT - di.now);
 			time.writeDuration(tds);
+			tds << '\n';
 		}
 		tds << move(12, 0);
 	}
