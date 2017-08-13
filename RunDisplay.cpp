@@ -345,6 +345,8 @@ try {
 				poller.wait(std::chrono::milliseconds(2));
 			}
 			quit = 1;
+			// quick workaround to prevent deadlock with Attention's thread
+			attn.add(info.now + 64, 0, Notice, Attention::Warning);
 			// assure buzzer is off
 			std::unique_ptr<duds::hardware::interface::DigitalPinAccess> buz =
 				buzzer.access();
