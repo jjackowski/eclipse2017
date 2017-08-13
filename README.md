@@ -24,13 +24,11 @@ longest totality, it takes about 15 seconds to produce the answer, and under 8 s
 additional nearby locations.
 
 The umbra_lcd program is intended for use on a portable computer system built around a Raspberry 
-Pi or something similar. It uses GPSD to find its current location, and a HD44780 or compatible 
-LCD to show the results. It uses a 20x4 display and a rotary encoder with a button, although use of input is still limited. I also wrote it with the expectation that ntpd will be running and 
-synchronizing the clock with GPS.
+Pi or something similar. It uses GPSD to find its current location, a HD44780 or compatible LCD to show the results, and a buzzer to provide audible notifications. It uses a 20x4 display and a rotary encoder with a button, although use of input is still limited. I also wrote it with the expectation that ntpd will be running and synchronizing the clock with GPS.
 
 What the umbra_lcd program does not yet do that I'd like it to:
- - Estimate the very beginning and ending of the eclipse
- - Show sun azimuth and elevation for the very beginning, ending, and mid-totality
+ - Estimate the very beginning and ending of the eclipse (it does a somewhat stupid version of this based on where I'm planning to be)
+ - Show sun azimuth and elevation for the very beginning, ending, and mid-totality (it does this, but the data comes from Alt_Az_Table and is for where I'm planning to be)
 
 # Dependencies
 
@@ -44,7 +42,6 @@ The umbra_lcd program additionally needs these libraries:
  - GPSD's C++ library
  - evdev
 
-If those last three libraries are not found, the umbra_lcd program will not build.
+If any of those last three libraries are not found, the umbra_lcd program will not be built.
 
-The default location for the DUDS library is at the same directory level as wherever this code 
-finds itself.
+The default location for the DUDS library is at the same directory level as wherever this code finds itself.

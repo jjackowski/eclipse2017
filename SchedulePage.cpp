@@ -18,7 +18,10 @@ using duds::hardware::devices::displays::clearTo;
 using duds::hardware::devices::displays::move;
 using duds::hardware::devices::displays::startLine;
 
-SchedulePage::SchedulePage() : startT(86400), endT(86400), shownT(86400) { }
+constexpr int SchedulePage::priority;
+
+SchedulePage::SchedulePage(Attention &a) :
+startT(86400), endT(86400), shownT(86400), attn(a) { }
 
 Page::SelectionResponse SchedulePage::select(
 	const DisplayInfo &di,
@@ -30,46 +33,45 @@ Page::SelectionResponse SchedulePage::select(
 	return SkipPage;
 }
 
+void SchedulePage::addAttn(int when) {
+	attn.add(when - 60, priority, 6, Attention::Notice);
+	attn.add(when - 30, priority, 6, Attention::Notice);
+	attn.add(when, priority, 6, Attention::Time);
+}
+
 void SchedulePage::makeEvents(const DisplayInfo &di) {
 	std::ostringstream oss;
 	evtbl.clear();
+	attn.remove(6);
 	double t = double(di.start - 5302);
 	// event names limited to 11 chars; rest not shown
 	evtbl[(int)t] = "Start pic";
+	addAttn((int)t);
 	int cnt = 1; // pic 0 is start
 	for (t += 5302.0/8.0; cnt < 8; ++cnt, t += 5302.0/8.0) {
 		oss << "Part pic " << cnt;
 		evtbl[(int)t] = oss.str();
+		addAttn((int)t);
 		oss.str(std::string());
 		if (cnt == 6) {
 			// I'd like to record video starting before totality.
 			evtbl[(int)t + 32] = "Setup video";
+			addAttn((int)t);
 		}
 	}
+	// audible prompts for these two handled elsewhere
 	evtbl[di.start] = "Totality";
-	// this goes with audible prompt
 	evtbl[di.start + (di.end - di.start) / 2] = "Mid-totalit"; // 'y' won't fit
 	for (t = (double)di.end + 5049.0/8.0; cnt < 15; ++cnt, t += 5049.0/8.0) {
 		oss << "Part pic " << cnt;
 		evtbl[(int)t] = oss.str();
+		addAttn((int)t);
 		oss.str(std::string());
 	}
 	evtbl[di.end + 5049] = "End pic";
+	addAttn(di.end + 5049);
 	endT = di.end;
 	startT = di.start;
-	
-	// test code
-	/*
-	std::cout << "Start time: " << (di.start - 5302);
-	EventTable::iterator iter = evtbl.begin();
-	for (; iter != evtbl.end(); ++iter) {
-		std::cout << "\n\t";
-		Hms time(iter->first);
-		time.writeTime(std::cout);
-		std::cout << " - " << iter->second;
-	}
-	std::cout << "\nEnd time: " << (di.end + 5049) << std::endl;
-	*/
 }
 
 void SchedulePage::show(

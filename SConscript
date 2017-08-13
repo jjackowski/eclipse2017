@@ -45,7 +45,7 @@ else:
 if 'LIBDUDS' in env and 'LIBGPS' in env and 'LIBEVDEV' in env:
 	targets.append(
 		env_lcd.Program('umbra_lcd',
-			Glob('[DEGNRT]*.cpp') + [
+			Glob('[ADEGNRT]*.cpp') + [
 				'umbra_lcd.cpp',
 				'InTotalityPage.cpp',
 				'SchedulePage.cpp',

@@ -43,7 +43,7 @@ void rotaryInput(EventTypeCode, std::int32_t val) {
 }
 
 void buttonInput(EventTypeCode, std::int32_t val) {
-	std::cout << "buttonInput(), val = " << val << std::endl;
+	//std::cout << "buttonInput(), val = " << val << std::endl;
 	inputButton = val;
 }
 
@@ -95,7 +95,7 @@ void RunDisplay::decPage(const DisplayInfo &di, Page::SelectionCause sc) {
 }
 
 void RunDisplay::changePage(int p) {
-	assert(!pagechange);
+	//assert(!pagechange);
 	page = p;
 	timer = pagetime;
 	pagechange = true;
@@ -129,6 +129,7 @@ try {
 			}
 		} while (inputRotor || inputButton || prev || (cnt < 64));
 	}
+	Attention attn(buzzer, testTimeOffset);
 	double batvolt = 12.0;
 	bool lowBatt = false;
 	bool critBatt = false;
@@ -152,7 +153,7 @@ try {
 		pages[Sun_Azimuth] = std::unique_ptr<Page>(new SunAzimuthPage(spt));
 		pages[Sun_Now] = std::unique_ptr<Page>(new SunPage(spt));
 	}
-	pages[Schedule] = std::unique_ptr<Page>(new SchedulePage);
+	pages[Schedule] = std::unique_ptr<Page>(new SchedulePage(attn));
 	pages[System] = std::unique_ptr<Page>(new SystemPage(batmon));
 	pages[Error] = std::unique_ptr<Page>(new ErrorPage);
 	pages[Notice] = std::unique_ptr<Page>(new NoticePage);
@@ -196,6 +197,30 @@ try {
 		// get stuff to display
 		DisplayInfo info(displaystuff.getInfo());
 
+		if (info.totchg) {
+			attn.remove(InTotality);
+			// before totality
+			attn.add(info.start - 60, 0, InTotality, Attention::Notice);
+			attn.add(info.start - 30, 0, InTotality, Attention::Notice);
+			// start of totality
+			attn.add(info.start, 0, InTotality, Attention::Time);
+			// mid-totality
+			attn.add(
+				info.start + (info.end - info.start) / 2,
+				0,
+				InTotality,
+				Attention::Notice
+			);
+			// end of totality
+			attn.add(info.end, 0, InTotality, Attention::Time);
+		}
+		if (info.notchg) {
+			attn.add(info.now, 4, Notice, Attention::Warning);
+		}
+		if (info.errchg) {
+			attn.add(info.now, 5, Error, Attention::Warning);
+		}
+
 		// in-totality is the most important page
 		if (pages[InTotality]->select(info, Page::SelectAuto) == Page::SelectPage) {
 			if (page != InTotality) {
@@ -213,9 +238,13 @@ try {
 			}
 		}
 
-		// second most impotant page is the notice -- shows low battery messages
-		if (!pagechange && info.notchg) {
-			changePage(Notice);
+		// use Attention for page change
+		if (!pagechange) {
+			int chgp = attn.changeToPage();
+			if (chgp > 0) {
+				changePage(chgp);
+				timer *= 4;
+			}
 		}
 
 		// change on user input; pre-empted by above conditions
@@ -234,14 +263,9 @@ try {
 		}
 
 		// output status: have new result?
-		if (!pagechange) {
-			if (info.errchg) {
-				// show new errors immediately
-				changePage(Error);
-			} else if (info.totchg) {
-				// show new result immediately
-				changePage(Totality_Times);
-			}
+		if (!pagechange && info.totchg) {
+			// show new result immediately
+			changePage(Totality_Times);
 		}
 
 		// automatic advance logic
@@ -285,8 +309,8 @@ try {
 			disp->clearTo(19, 0);
 		}
 
-		assert(disp->rowPos() == 1);
-		assert(disp->columnPos() == 0);
+		//assert(disp->rowPos() == 1);
+		//assert(disp->columnPos() == 0);
 		// second line; positioned for page show/update
 
 		// clear page change
