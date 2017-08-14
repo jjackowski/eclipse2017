@@ -12,8 +12,6 @@
 #include "SchedulePage.hpp"
 #include <sstream>
 
-#include <iostream>
-
 using duds::hardware::devices::displays::clearTo;
 using duds::hardware::devices::displays::move;
 using duds::hardware::devices::displays::startLine;
@@ -56,7 +54,7 @@ void SchedulePage::makeEvents(const DisplayInfo &di) {
 		if (cnt == 6) {
 			// I'd like to record video starting before totality.
 			evtbl[(int)t + 32] = "Setup video";
-			addAttn((int)t);
+			attn.add((int)t + 32, priority, 6, Attention::Warning);
 		}
 	}
 	// audible prompts for these two handled elsewhere
