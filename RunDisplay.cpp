@@ -187,10 +187,10 @@ try {
 		displaystuff.setTime(time.total_seconds());
 
 		// check for low voltage
-		if (!lowBatt && (batvolt < 8.9)) {
+		if (!lowBatt && (batvolt < 9.4)) {
 			lowBatt = true;
 			displaystuff.setNotice("Low battery voltage");
-		} else if (!critBatt && (batvolt < 8.5)) {
+		} else if (!critBatt && (batvolt < 9.1)) {
 			critBatt = true;
 			displaystuff.setNotice("Very low battery\nvoltage");
 		}
@@ -225,6 +225,8 @@ try {
 		if (pages[InTotality]->select(info, Page::SelectAuto) == Page::SelectPage) {
 			if (page != InTotality) {
 				changePage(InTotality);
+				std::ofstream locf("location", std::ios_base::app);
+				locf << std::fixed << info.curloc.lon << ", " << info.curloc.lat << std::endl;
 			}
 			// prevent page changes during totality
 			pagechange = true;
@@ -330,7 +332,7 @@ try {
 		if (inputButton || // Shutdown if requested, or if the battery is
 			// running low and the eclipse is over. If eclipse is not over, then
 			// keep going and risk damaging the batteries.
-			((batvolt < 8.2) && (info.now > (info.end + 5055)))
+			((batvolt < 8.4) && (info.now > (info.end + 5055)))
 		) {
 			int prev = 0, cnt = 0;
 			while ((inputButton != prev) && (cnt < 64)) {
